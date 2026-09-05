@@ -1,0 +1,78 @@
+pipeline {
+    agent any
+    tools {
+        maven 'maventool'
+    }
+    stages {
+        stage('CleanWorkspace') {
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Code') {
+            steps {
+                git 'https://github.com/imjk04/java_application.git'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('CQA') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh "mvn clean verify sonar:sonar -Dsonar.projectKey=k8s"
+                }
+            }
+        }
+        stage('QualityGate') {
+            steps {
+                waitForQualityGate abortPipeline: true, credentialsId: 'sonar-key'
+            }
+        }
+        stage('Artifact') {
+            steps {
+                script {
+                    def pom = readMavenPom file: 'pom.xml'
+                    nexusArtifactUploader artifacts: [[
+                        artifactId: "$pom.artifactId",
+                        classifier: '',
+                        file: "target/${pom.artifactId}-${pom.version}.war",
+                        type: 'war'
+                    ]],
+                    credentialsId: 'nexuscred',
+                    groupId: "$pom.groupId",
+                    nexusUrl: '54.80.167.61:8081',
+                    nexusVersion: 'nexus3',
+                    protocol: 'http',
+                    repository: 'nexusrepo',
+                    version: "$pom.version"
+                }
+            }
+        } 
+        stage('Image-Build') {
+            steps {
+                sh 'docker build -t imjk04/k8s:dbimage Docker-db'
+                sh 'cp -R target Docker-app'
+                sh 'docker build -t imjk04/k8s:appimage Docker-app'
+            }
+        }
+        stage('Image-Scan') {
+            steps {
+                sh 'trivy image imjk04/k8s:dbimage'
+                sh 'trivy image imjk04/k8s:appimage'
+            }
+        } 
+        stage('Image-Push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred') {
+                        sh 'docker push imjk04/k8s:dbimage'
+                        sh 'docker push imjk04/k8s:appimage'
+                    }
+                }
+            }
+        }
+    }
+}
