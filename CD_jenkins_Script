@@ -1,0 +1,24 @@
+pipeline {
+    agent any
+    stages {
+        stage('Code') {
+            steps {
+                git 'https://github.com/imjk04/java_application.git'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                withKubeCredentials(kubectlCredentials: [[
+                    caCertificate: '',
+                    clusterName: 'firsteks',
+                    contextName: '',
+                    credentialsId: 'Kubernetes-key',
+                    namespace: 'deployment',
+                    serverUrl: 'https://0E7CD9CE09A0C830BDAE63BF896C6E4C.gr7.us-east-1.eks.amazonaws.com'
+                ]]) {
+                    sh 'kubectl apply -f manifest'
+                }
+            }
+        }
+    }
+}
